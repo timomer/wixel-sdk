@@ -154,7 +154,6 @@ static uint8 save_IEN2;
 XDATA uint8 battery_capacity=0;
 XDATA uint32 last_beacon=0;
 XDATA uint32 last_battery=0;
-XDATA static volatile uint8 channel = 0;	//current radio channel
 XDATA uint8 last_channel = 0; // last channel we captured a packet on
 // _Dexcom_packet - Type Definition of a Dexcom Radio packet
 // actual packet length is 17 bytes, excluding len and checksum, rssi &LQI.
@@ -518,7 +517,7 @@ PDATA volatile uint32 timeMs;
 ISR(T4, 0)
 {
     timeMs++;
-    // T4CC0 ^= 1; // If we do this, then on average the interrupts will occur precisely 1.000 ms apart.
+	T4CC0 ^= 1; // If we do this, then on average the interrupts will occur precisely 1.000 ms apart.
 }
 
 uint32 getMs()
@@ -545,6 +544,7 @@ void addMs(uint32 addendum)
 
 void timeInit()
 {
+	// set the timer tick interval
     T4CC0 = 187;
     T4IE = 1;     // Enable Timer 4 interrupt.  (IEN1.T4IE=1)
 
@@ -1567,7 +1567,6 @@ int controlProtocolService()
 {
 	static uint32 cmd_to;
 	// ok this is where we check if there's anything happening incoming on the USB COM port or UART 0 port.
-	//trying setting nRet to 0, it should only return 1 if there is something to do.
 	int nRet = 1;
 	uint8 b;
 	//if we have timed out waiting for a command, clear the command buffer and return.
@@ -1575,7 +1574,6 @@ int controlProtocolService()
 	{
 		// clear command buffer if there was anything
 		init_command_buff(&command_buff);
-		//nRet = 0;
 		return nRet;
 	}	
 	//while we have something in either buffer,
@@ -1789,13 +1787,13 @@ int get_packet(Dexcom_packet* pPkt)
 			else if(getMs()<pkt_time) 
 			{
 				//the current time is less than the pkt_time, meaning our ms register has rolled over.
-				delay = (300000 + wake_before_packet) - (4294967295 + getMs() - pkt_time);
+				delay = (300000 - (wake_before_packet*1000)) - (4294967295 + getMs() - pkt_time);
 			}
 			else
 			{
 				// the current time is greater than the last pkt_time, so we just do a basic calculation.
 				// 5 mins in ms + the wake_before_packet time - (current ms - last packet ms)
-				delay = (300000 + wake_before_packet) - (getMs() - pkt_time);
+				delay = (300000 - (wake_before_packet*1000)) - (getMs() - pkt_time);
 			}
 			//if we have a delay number that doesn't equal 0, we need to subtract 500 * the channel we last captured on.
 			// ie, if we last captured on channel 0, subtract 0.  If on channel 1, subtract 500, etc
@@ -1983,7 +1981,6 @@ void main()
 	setRadioRegistersInitFunc(dex_RadioSettings);
 	if(send_debug)
 		printf_fast("looking for %lu (%s)\r\n",settings.dex_tx_id, dexcom_src_to_ascii(settings.dex_tx_id));
-	channel=0;
 	while (1)
 	{
 		Dexcom_packet Pkt;
@@ -2117,8 +2114,6 @@ void main()
 			init_command_buff(&command_buff);
 			// tell the radio to remain IDLE when the next packet is recieved.
 			MCSM1 = 0;			// after RX go to idle, we don't transmit
-			// set the start channel to 0
-			channel=0;
 			// watchdog mode??? this will do a reset?
 			//			WDCTL=0x0B;
 			// delayMs(50);    //wait for reset
